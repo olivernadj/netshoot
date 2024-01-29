@@ -20,7 +20,7 @@ esac
 
 get_ctop() {
   VERSION=$(get_latest_release bcicen/ctop | sed -e 's/^v//')
-  LINK="https://github.com/bcicen/ctop/releases/download/${VERSION}/ctop-${VERSION}-linux-${ARCH}"
+  LINK="https://github.com/bcicen/ctop/releases/download/v${VERSION}/ctop-${VERSION}-linux-${ARCH}"
   wget "$LINK" -O /tmp/ctop && chmod +x /tmp/ctop
 }
 
@@ -32,9 +32,6 @@ get_calicoctl() {
 
 get_termshark() {
   case "$ARCH" in
-    "arm"*)
-      echo "echo termshark does not yet support arm" > /tmp/termshark && chmod +x /tmp/termshark
-      ;;
     *)
       VERSION=$(get_latest_release gcla/termshark | sed -e 's/^v//')
       if [ "$ARCH" == "amd64" ]; then
@@ -51,6 +48,37 @@ get_termshark() {
   esac
 }
 
+get_grpcurl() {
+  if [ "$ARCH" == "amd64" ]; then
+    TERM_ARCH=x86_64
+  else
+    TERM_ARCH="$ARCH"
+  fi
+  VERSION=$(get_latest_release fullstorydev/grpcurl | sed -e 's/^v//')
+  LINK="https://github.com/fullstorydev/grpcurl/releases/download/v${VERSION}/grpcurl_${VERSION}_linux_${TERM_ARCH}.tar.gz"
+  wget "$LINK" -O /tmp/grpcurl.tar.gz  && \
+  tar -zxvf /tmp/grpcurl.tar.gz && \
+  mv "grpcurl" /tmp/grpcurl && \
+  chmod +x /tmp/grpcurl
+}
+
+get_fortio() {
+  if [ "$ARCH" == "amd64" ]; then
+    TERM_ARCH=x86_64
+  else
+    TERM_ARCH="$ARCH"
+  fi
+  VERSION=$(get_latest_release fortio/fortio | sed -e 's/^v//')
+  LINK="https://github.com/fortio/fortio/releases/download/v${VERSION}/fortio-linux_${ARCH}-${VERSION}.tgz"
+  wget "$LINK" -O /tmp/fortio.tgz  && \
+  tar -zxvf /tmp/fortio.tgz && \
+  mv "usr/bin/fortio" /tmp/fortio && \
+  chmod +x /tmp/fortio
+}
+
+
 get_ctop
 get_calicoctl
 get_termshark
+get_grpcurl
+get_fortio

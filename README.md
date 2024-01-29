@@ -9,13 +9,15 @@
 dP    dP `88888P'   dP   `88888P' dP    dP `88888P' `88888P'   dP
 ```
 
-**Purpose:** Docker and Kubernetes network troubleshooting can become complex. With proper understanding of how Docker and Kubernetes networking works and the right set of tools, you can troubleshoot and resolve these networking issues. The `netshoot` container has a set of powerful networking tshooting tools that can be used to troubleshoot Docker networking issues. Along with these tools come a set of use-cases that show how this container can be used in real-world scenarios.
+**Purpose:** Docker and Kubernetes network troubleshooting can become complex. With proper understanding of how Docker and Kubernetes networking works and the right set of tools, you can troubleshoot and resolve these networking issues. The `netshoot` container has a set of powerful networking troubleshooting tools that can be used to troubleshoot Docker networking issues. Along with these tools come a set of use-cases that show how this container can be used in real-world scenarios.
 
 **Network Namespaces:** Before starting to use this tool, it's important to go over one key topic: **Network Namespaces**. Network namespaces provide isolation of the system resources associated with networking. Docker uses network and other type of namespaces (`pid`,`mount`,`user`..etc) to create an isolated environment for each container. Everything from interfaces, routes, and IPs is completely isolated within the network namespace of the container. 
 
 Kubernetes also uses network namespaces. Kubelets creates a network namespace per pod where all containers in that pod share that same network namespace (eths,IP, tcp sockets...etc). This is a key difference between Docker containers and Kubernetes pods.
 
 Cool thing about namespaces is that you can switch between them. You can enter a different container's network namespace, perform some troubleshooting on its network's stack with tools that aren't even installed on that container. Additionally, `netshoot` can be used to troubleshoot the host itself by using the host's network namespace. This allows you to perform any troubleshooting without installing any new packages directly on the host or your application's package. 
+
+## Netshoot with Docker 
 
 * **Container's Network Namespace:** If you're having networking issues with your application's container, you can launch `netshoot` with that container's network namespace like this:
 
@@ -27,15 +29,111 @@ Cool thing about namespaces is that you can switch between them. You can enter a
 
 * **Network's Network Namespace:** If you want to troubleshoot a Docker network, you can enter the network's namespace using `nsenter`. This is explained in the `nsenter` section below.
 
-**Kubernetes**
+## Netshoot with Docker Compose
 
-If you want to spin up a throw away container for debugging.
+You can easily deploy `netshoot` using Docker Compose using something like this:
 
-`$ kubectl run tmp-shell --rm -i --tty --image nicolaka/netshoot -- /bin/bash`
+```
+version: "3.6"
+services:
+  tcpdump:
+    image: nicolaka/netshoot
+    depends_on:
+      - nginx
+    command: tcpdump -i eth0 -w /data/nginx.pcap
+    network_mode: service:nginx
+    volumes:
+      - $PWD/data:/data
 
-And if you want to spin up a container on the host's network namespace.
+  nginx:
+    image: nginx:alpine
+    ports:
+      - 80:80
+```
 
-`$ kubectl run tmp-shell --rm -i --tty --overrides='{"spec": {"hostNetwork": true}}'  --image nicolaka/netshoot  -- /bin/bash`
+## Netshoot with Kubernetes
+
+* if you want to debug using an [ephemeral container](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container-example) in an existing pod:
+
+    `$ kubectl debug mypod -it --image=nicolaka/netshoot`
+
+* if you want to spin up a throw away pod for debugging.
+
+    `$ kubectl run tmp-shell --rm -i --tty --image nicolaka/netshoot`
+
+* if you want to spin up a container on the host's network namespace.
+
+    `$ kubectl run tmp-shell --rm -i --tty --overrides='{"spec": {"hostNetwork": true}}'  --image nicolaka/netshoot`
+
+* if you want to use netshoot as a sidecar container to troubleshoot your application container
+
+ ```
+    $ cat netshoot-sidecar.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+        name: nginx-netshoot
+        labels:
+            app: nginx-netshoot
+    spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: nginx-netshoot
+    template:
+        metadata:
+        labels:
+            app: nginx-netshoot
+        spec:
+            containers:
+            - name: nginx
+            image: nginx:1.14.2
+            ports:
+                - containerPort: 80
+            - name: netshoot
+            image: nicolaka/netshoot
+            command: ["/bin/bash"]
+            args: ["-c", "while true; do ping localhost; sleep 60;done"]
+
+    $ kubectl apply -f netshoot-sidecar.yaml
+      deployment.apps/nginx-netshoot created
+
+    $ kubectl get pod
+NAME                              READY   STATUS    RESTARTS   AGE
+nginx-netshoot-7f9c6957f8-kr8q6   2/2     Running   0          4m27s
+
+    $ kubectl exec -it nginx-netshoot-7f9c6957f8-kr8q6 -c netshoot -- /bin/zsh
+                        dP            dP                           dP
+                        88            88                           88
+    88d888b. .d8888b. d8888P .d8888b. 88d888b. .d8888b. .d8888b. d8888P
+    88'  `88 88ooood8   88   Y8ooooo. 88'  `88 88'  `88 88'  `88   88
+    88    88 88.  ...   88         88 88    88 88.  .88 88.  .88   88
+    dP    dP `88888P'   dP   `88888P' dP    dP `88888P' `88888P'   dP
+
+    Welcome to Netshoot! (github.com/nicolaka/netshoot)
+
+
+    nginx-netshoot-7f9c6957f8-kr8q6 $ 
+ ```
+
+## The netshoot kubectl plugin
+
+To easily troubleshoot networking issues in your k8s environment, you can leverage the [Netshoot Kubeclt Plugin](https://github.com/nilic/kubectl-netshoot) (shout out to Nebojsa Ilic for creating it!). Using this kubectl plugin, you can easily create ephemeral `netshoot` containers to troubleshoot existing pods, k8s controller or worker nodes. To install the plugin, follow [these steps](https://github.com/nilic/kubectl-netshoot#installation).
+
+Sample Usage:
+
+```
+# spin up a throwaway pod for troubleshooting
+kubectl netshoot run tmp-shell
+
+# debug using an ephemeral container in an existing pod
+kubectl netshoot debug my-existing-pod
+
+# create a debug session on a node
+kubectl netshoot debug node/my-node
+```
+
+
 
 **Network Problems** 
 
@@ -54,56 +152,61 @@ To troubleshoot these issues, `netshoot` includes a set of powerful tools as rec
 
 **Included Packages:** The following packages are included in `netshoot`. We'll go over some with some sample use-cases.
 
-    apache2-utils
-    bash
-    bind-tools
-    bird
-    bridge-utils
-    busybox-extras
-    calicoctl
-    conntrack-tools
-    ctop
-    curl
-    dhcping
-    drill
-    ethtool
-    file
-    fping
-    httpie
-    iftop
-    iperf
-    iproute2
-    ipset
-    iptables
-    iptraf-ng
-    iputils
-    ipvsadm
-    jq
-    libc6-compat
-    liboping
-    mtr
-    net-snmp-tools
-    netcat-openbsd
-    netgen
-    nftables
-    ngrep
-    nmap
-    nmap-nping
-    openssl
-    py-crypto
-    py2-virtualenv
-    python2
-    scapy
-    socat
-    strace
-    tcpdump
-    tcptraceroute
-    termshark
-    tshark
-    util-linux
-    vim
-    websocat
-
+    apache2-utils \
+    bash \
+    bind-tools \
+    bird \
+    bridge-utils \
+    busybox-extras \
+    conntrack-tools \
+    curl \
+    dhcping \
+    drill \
+    ethtool \
+    file\
+    fping \
+    grpcurl \
+    iftop \
+    iperf \
+    iperf3 \
+    iproute2 \
+    ipset \
+    iptables \
+    iptraf-ng \
+    iputils \
+    ipvsadm \
+    jq \
+    libc6-compat \
+    liboping \
+    ltrace \
+    mtr \
+    net-snmp-tools \
+    netcat-openbsd \
+    nftables \
+    ngrep \
+    nmap \
+    nmap-nping \
+    nmap-scripts \
+    openssl \
+    py3-pip \
+    py3-setuptools \
+    scapy \
+    socat \
+    speedtest-cli \
+    openssh \
+    strace \
+    tcpdump \
+    tcptraceroute \
+    tshark \
+    util-linux \
+    vim \
+    git \
+    zsh \
+    websocat \
+    swaks \
+    perl-crypt-ssleay \
+    perl-net-ssleay
+    
 ## **Sample Use-cases** 
 
 ## iperf 
@@ -586,6 +689,79 @@ Termshark is a terminal user-interface for tshark. It allows user to read pcap f
 ```
 More info on `termshark` [here](https://github.com/gcla/termshark)
 
-## Feedback & Contribution
+## Swaks
 
-Feel free to provide feedback and contribute networking troubleshooting tools and use-cases by opening PRs. If you would like to add any package, open a PR with the rationale and ensure that you update both the Dockerfile and the README with some examples on how to use it!
+Swaks (Swiss Army Knife for SMTP) is a featureful, flexible, scriptable, transaction-oriented SMTP test tool. It is free to use and licensed under the GNU GPLv2.
+
+You can use it to test and troubleshoot email servers with a crystal-clear syntax:
+
+```bash
+swaks --to user@example.com \
+  --from fred@example.com --h-From: '"Fred Example" <fred@example.com>' \
+  --auth CRAM-MD5 --auth-user me@example.com \
+  --header-X-Test "test email" \
+  --tls \
+  --data "Example body"
+```
+
+More info, examples and lots of documentation on `Swaks` [here](http://www.jetmore.org/john/code/swaks/)
+
+## Grpcurl
+grpcurl is a command-line tool that lets you interact with gRPC servers. It's basically curl for gRPC servers.
+
+Invoking an RPC on a trusted server (e.g. TLS without self-signed key or custom CA) that requires no client certs and supports server reflection is the simplest thing to do with grpcurl. This minimal invocation sends an empty request body:
+
+```bash
+grpcurl grpc.server.com:443 my.custom.server.Service/Method
+
+# no TLS
+grpcurl -plaintext grpc.server.com:80 my.custom.server.Service/Method
+```
+
+More info, examples and lots of documentation on `Grpcurl` [here](https://github.com/fullstorydev/grpcurl)
+
+## Fortio
+
+Fortio is a fast, small (4Mb docker image, minimal dependencies), reusable, embeddable go library as well as a command line tool and server process, the server includes a simple web UI and REST API to trigger run and see graphical representation of the results (both a single latency graph and a multiple results comparative min, max, avg, qps and percentiles graphs).
+
+```bash
+$ fortio load http://www.google.com
+Fortio X.Y.Z running at 8 queries per second, 8->8 procs, for 5s: http://www.google.com
+19:10:33 I httprunner.go:84> Starting http test for http://www.google.com with 4 threads at 8.0 qps
+Starting at 8 qps with 4 thread(s) [gomax 8] for 5s : 10 calls each (total 40)
+19:10:39 I periodic.go:314> T002 ended after 5.056753279s : 10 calls. qps=1.9775534712220633
+19:10:39 I periodic.go:314> T001 ended after 5.058085991s : 10 calls. qps=1.9770324224999916
+19:10:39 I periodic.go:314> T000 ended after 5.058796046s : 10 calls. qps=1.9767549252963101
+19:10:39 I periodic.go:314> T003 ended after 5.059557593s : 10 calls. qps=1.9764573910247019
+Ended after 5.059691387s : 40 calls. qps=7.9056
+Sleep times : count 36 avg 0.49175757 +/- 0.007217 min 0.463508712 max 0.502087879 sum 17.7032725
+Aggregated Function Time : count 40 avg 0.060587641 +/- 0.006564 min 0.052549016 max 0.089893269 sum 2.42350566
+# range, mid point, percentile, count
+>= 0.052549 < 0.06 , 0.0562745 , 47.50, 19
+>= 0.06 < 0.07 , 0.065 , 92.50, 18
+>= 0.07 < 0.08 , 0.075 , 97.50, 2
+>= 0.08 <= 0.0898933 , 0.0849466 , 100.00, 1
+# target 50% 0.0605556
+# target 75% 0.0661111
+# target 99% 0.085936
+# target 99.9% 0.0894975
+Code 200 : 40
+Response Header Sizes : count 40 avg 690.475 +/- 15.77 min 592 max 693 sum 27619
+Response Body/Total Sizes : count 40 avg 12565.2 +/- 301.9 min 12319 max 13665 sum 502608
+All done 40 calls (plus 4 warmup) 60.588 ms avg, 7.9 qps
+```
+
+More info, examples and lots of documentation on `Fortio` [here](https://github.com/fortio/fortio)
+
+## Contribution
+
+Feel free to provide to contribute networking troubleshooting tools and use-cases by opening PRs. If you would like to add any package, please follow these steps:
+
+* In the PR, please include some rationale as to why this tool is useful to be included in netshoot. 
+     > Note: If the functionality of the tool is already addressed by an existing tool, I might not accept the PR
+* Change the Dockerfile to include the new package/tool
+* If you're building the tool from source, make sure you leverage the multi-stage build process and update the `build/fetch_binaries.sh` script 
+* Update the README's list of included packages AND include a section on how to use the tool
+* If the tool you're adding supports multi-platform, please make sure you highlight that.
+
+

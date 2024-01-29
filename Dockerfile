@@ -7,12 +7,12 @@ RUN apt-get update && apt-get install -y \
 
 RUN /tmp/fetch_binaries.sh
 
-FROM alpine:3.13
+FROM alpine:3.18.0
 
 RUN set -ex \
-    && echo "http://nl.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
-    && echo "http://nl.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories \
-    && echo "http://nl.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories \
+    && echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
+    && echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories \
+    && echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories \
     && apk update \
     && apk upgrade \
     && apk add --no-cache \
@@ -31,15 +31,18 @@ RUN set -ex \
     fping \
     iftop \
     iperf \
+    iperf3 \
     iproute2 \
     ipset \
-    iptables \ 
+    iptables \
     iptraf-ng \
     iputils \
     ipvsadm \
+    httpie \
     jq \
     libc6-compat \
     liboping \
+    ltrace \
     mtr \
     net-snmp-tools \
     netcat-openbsd \
@@ -47,24 +50,27 @@ RUN set -ex \
     ngrep \
     nmap \
     nmap-nping \
+    nmap-scripts \
     openssl \
     py3-pip \
     py3-setuptools \
     scapy \
     socat \
     speedtest-cli \
+    openssh \
+    oh-my-zsh \
     strace \
     tcpdump \
     tcptraceroute \
     tshark \
     util-linux \
-    vim \ 
+    vim \
     git \
     zsh \
-    websocat
-
-# Installing httpie ( https://httpie.io/docs#installation)
-RUN pip3 install --upgrade httpie
+    websocat \
+    swaks \
+    perl-crypt-ssleay \
+    perl-net-ssleay
 
 # Installing ctop - top-like container monitor
 COPY --from=fetcher /tmp/ctop /usr/local/bin/ctop
@@ -75,20 +81,27 @@ COPY --from=fetcher /tmp/calicoctl /usr/local/bin/calicoctl
 # Installing termshark
 COPY --from=fetcher /tmp/termshark /usr/local/bin/termshark
 
+# Installing grpcurl
+COPY --from=fetcher /tmp/grpcurl /usr/local/bin/grpcurl
+
+# Installing fortio
+COPY --from=fetcher /tmp/fortio /usr/local/bin/fortio
+
 # Setting User and Home
 USER root
 WORKDIR /root
 ENV HOSTNAME netshoot
 
 # ZSH Themes
-RUN wget https://github.com/robbyrussell/oh-my-zsh/raw/master/tools/install.sh -O - | zsh || true
+RUN curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | sh
 RUN git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 RUN git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
 COPY zshrc .zshrc
 COPY motd motd
 
-# Fix permissions for OpenShift
+# Fix permissions for OpenShift and tshark
 RUN chmod -R g=u /root
+RUN chown root:root /usr/bin/dumpcap
 
 # Running ZSH
 CMD ["zsh"]
